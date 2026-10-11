@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `NativeTextViewWrapper.isFocused` provides optional two-way first-responder
+  coordination for embedders without changing AppKit-owned focus by default.
+
 ### Fixed
 - Switching documents drops AppKit's blue autocorrection underline; it stood over the incoming document, and its range moved into the new text.
 - Smart paste keeps tables, lists and headings that arrive wrapped in elements the converter doesn't know (Gemini's `<response-element>`/`<table-block>` web components, `<section>`, a Google Docs `<b>` wrapper); they used to collapse into one line of text.

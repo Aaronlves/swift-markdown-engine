@@ -313,11 +313,11 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.onPasteImage = onPasteImage
         if #available(macOS 15.1, *) {
-            // `.limited` = the Writing Tools popover panel; `.complete` = the inline
-            // experience that morphs the text with an animation. We use `.limited` so
-            // rewrites/proofread land in the popover (no in-text animation) — it also
-            // sidesteps the inline-rewrite flicker that dims text below the selection.
-            textView.writingToolsBehavior = .limited
+            // Inline: rewrites morph in place. AppKit assumes the text view sits at the
+            // document view's origin, ours doesn't (#205): on 15.1–26 the text below a
+            // rewrite dims for the animation, on 27 a later grammar overlay can jump.
+            textView.writingToolsBehavior = .complete
+            WritingToolsEditTrackerFix.install()
         }
         // Create TextKit 2 layout bridge
         let bridge = LayoutBridge(textLayoutManager)
@@ -469,12 +469,26 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         }()
 
         if wtActive && isNodeSwitch {
+            // Editing the storage while Writing Tools stream makes AppKit throw
+            // (measured on 27.0.1, popover too): switch once the session has settled.
+            if #available(macOS 15.2, *), let writingTools = textView.writingToolsCoordinator,
+               writingTools.state == .interactiveStreaming {
+                context.coordinator.deferNodeSwitch(until: writingTools) { [weak nsView] in
+                    guard let nsView else { return }
+                    self.updateNSView(nsView, context: context)
+                }
+                return
+            }
             // User switched files while Writing Tools was active — discard the
             // WT session so it doesn't overwrite the wrong node.
             // Keep wtStartDocumentId so textViewWritingToolsDidEnd can detect the
             // node mismatch and discard the results.
+            context.coordinator.cancelDeferredNodeSwitch()
             context.coordinator.isWritingToolsActive = false
+            textView.endWritingToolsHide()
         } else if wtActive {
+            // Back on the session's document: a deferred switch is void.
+            context.coordinator.cancelDeferredNodeSwitch()
             // WT active on the same node — don't interfere with the session.
             // Note: this skips the heightBehavior sync below, so a heightBehavior
             // change while Writing Tools is active won't take effect until the

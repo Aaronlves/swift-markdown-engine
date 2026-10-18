@@ -27,14 +27,16 @@ extension NativeTextViewCoordinator {
 
     @available(macOS 15.0, *)
     public func textViewWritingToolsDidEnd(_ textView: NSTextView) {
+        (textView as? NativeTextView)?.endWritingToolsHide()
         guard isWritingToolsActive else { return }
         isWritingToolsActive = false
         wtChildWindow = nil
         wtInitialChildOrigin = nil
         stopObservingUndoNotifications()
 
-        // Doc switched mid-session — discard WT results, the new node already loaded.
-        if wtStartDocumentId != nil && wtStartDocumentId != documentId {
+        // Doc switched mid-session, or a switch waits for this end: the binding
+        // already belongs to the new node, so the WT result is discarded.
+        if deferredNodeSwitch != nil || (wtStartDocumentId != nil && wtStartDocumentId != documentId) {
             wtStartDocumentId = nil
             return
         }
@@ -67,8 +69,26 @@ extension NativeTextViewCoordinator {
         }
         // Don't pre-set `lastSyncedText` — leaving it stale lets updateNSView do its
         // normal rebuild (restyle + re-measure) so the accepted WT result stays visible.
+        let target = documentId
         DispatchQueue.main.async { [self] in
+            guard bindingFollows(target) else { return }
             text = storage
+        }
+    }
+
+    /// Writing Tools rewrite prose only: code, formulas, links, embeds and tables come
+    /// back as written (the zones spell checking skips too).
+    @available(macOS 15.0, *)
+    public func textView(_ textView: NSTextView,
+                         writingToolsIgnoredRangesInEnclosingRange enclosingRange: NSRange) -> [NSValue] {
+        parsedDocument(for: textView.string).tokens.compactMap { token in
+            switch token.kind {
+            case .codeBlock, .inlineCode, .inlineLatex, .blockLatex, .link, .wikiLink, .imageEmbed, .imageLink, .table:
+                let range = NSIntersectionRange(token.range, enclosingRange)
+                return range.length > 0 ? NSValue(range: range) : nil
+            default:
+                return nil
+            }
         }
     }
 
@@ -124,5 +144,38 @@ extension NativeTextViewCoordinator {
             fixed.origin = correctOrigin
             childWin.setFrame(fixed, display: false)
         }
+    }
+
+    /// Stops the session (its result is dropped: the document is about to change)
+    /// and replays the latest switch once the coordinator leaves `.interactiveStreaming`.
+    @available(macOS 15.2, *)
+    func deferNodeSwitch(until writingTools: NSWritingToolsCoordinator, replay: @escaping () -> Void) {
+        deferredNodeSwitch = replay
+        guard deferredNodeSwitchTimer == nil else { return }
+        writingTools.stopWritingTools()
+        let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self, weak writingTools] timer in
+            MainActor.assumeIsolated {
+                guard let self else { return timer.invalidate() }
+                if let writingTools, writingTools.state == .interactiveStreaming { return }
+                let replay = self.deferredNodeSwitch
+                self.cancelDeferredNodeSwitch()
+                replay?()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        deferredNodeSwitchTimer = timer
+    }
+
+    /// Whether text from the text view may still reach the binding. SwiftUI hands over
+    /// the next document's binding before a deferred switch reaches the text view, and
+    /// an async write can land after a switch.
+    func bindingFollows(_ documentId: String?) -> Bool {
+        deferredNodeSwitch == nil && documentId == self.documentId
+    }
+
+    func cancelDeferredNodeSwitch() {
+        deferredNodeSwitchTimer?.invalidate()
+        deferredNodeSwitchTimer = nil
+        deferredNodeSwitch = nil
     }
 }

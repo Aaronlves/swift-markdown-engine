@@ -38,10 +38,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that one step (`WritingToolsEditTrackerFix`). Switching documents while
   Writing Tools are streaming waits for them to settle instead of crashing
   AppKit, and drops the session's result instead of writing it into the next
-  document. Known (#205): AppKit assumes the text view sits at the document
-  view's origin, so on 15.1–26 the text below a mid-document rewrite still dims
-  for the animation, and on 27 a grammar suggestion shown after a session can
-  jump for a moment when the text height changes.
+  document. Known: on 15.1–26 the text below a mid-document rewrite still dims
+  for the animation, because AppKit's older path wants the text view directly
+  inside the clip view.
+- The text view always sits at its container's origin (#205): the header band
+  and the reading column's offset are the container's bounds origin, so on
+  macOS 27 a grammar suggestion no longer jumps up and to the left when the
+  layout changes during its animation. Embedders that read
+  `textView.frame.origin` for its on-screen position should convert with
+  `convert(_:to:)` instead.
 - **Breaking:** `MarkdownEngineCodeBlocks` no longer depends on
   HighlighterSwift. `HighlighterSwiftBridge` is replaced by
   `HighlightJSBridge`, which runs the same highlight.js 11.11.1 build
@@ -60,6 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Switching documents drops AppKit's blue autocorrection underline; it stood over the incoming document, and its range moved into the new text.
 - Smart paste keeps tables, lists and headings that arrive wrapped in elements the converter doesn't know (Gemini's `<response-element>`/`<table-block>` web components, `<section>`, a Google Docs `<b>` wrapper); they used to collapse into one line of text.
+- Writing Tools on macOS 27: switching documents while a proofread's suggestions show, or pressing ⌘Z during a rewrite, no longer crashes when the session ends. AppKit's own end replayed the session's ranges over the next document or the undone text; the engine now ends the session at the switch and at the undo. Until then the next document also took no updates.
+- After a proofread the next keystroke reports its `onTextMutation` again.
 
 ## [0.14.0] - 2026-10-04
 

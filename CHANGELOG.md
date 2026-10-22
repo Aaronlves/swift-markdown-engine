@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-22
+
 ### Added
 - `NativeTextViewWrapper.isFocused` provides optional two-way first-responder
   coordination for embedders without changing AppKit-owned focus by default.
@@ -23,6 +25,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the foreground colour).
 
 ### Changed
+- **Breaking:** `MarkdownEngineCodeBlocks` no longer depends on
+  HighlighterSwift. `HighlighterSwiftBridge` is replaced by
+  `HighlightJSBridge`, which runs the same highlight.js 11.11.1 build
+  (bundled, all 192 languages) and colours its token tree from a
+  `CodeHighlightTheme` — a Swift colour per highlight.js scope — instead
+  of a CSS theme. HighlighterSwift's CSS parser dropped compound
+  selectors, so a nested scope took its parent's colour: function names
+  (`title.function`) coloured as `title`, `self`/`this`
+  (`variable.language`) as `variable`. Theme names become
+  `CodeHighlightTheme` values, and the default is now
+  `.githubLight`/`.githubDark` (was atom-one).
+- A fenced block's language is the info string's first word
+  (```` ```python title="x.py" ````), and a half-typed or mislabelled
+  block still highlights (highlight.js's `ignoreIllegals`).
 - Writing Tools use the inline experience again (`writingToolsBehavior =
   .complete`, was `.limited`): a rewrite or proofread morphs in place instead of
   landing in the popover. Code, formulas, links, embeds and tables are excluded
@@ -47,23 +63,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   layout changes during its animation. Embedders that read
   `textView.frame.origin` for its on-screen position should convert with
   `convert(_:to:)` instead.
-- **Breaking:** `MarkdownEngineCodeBlocks` no longer depends on
-  HighlighterSwift. `HighlighterSwiftBridge` is replaced by
-  `HighlightJSBridge`, which runs the same highlight.js 11.11.1 build
-  (bundled, all 192 languages) and colours its token tree from a
-  `CodeHighlightTheme` — a Swift colour per highlight.js scope — instead
-  of a CSS theme. HighlighterSwift's CSS parser dropped compound
-  selectors, so a nested scope took its parent's colour: function names
-  (`title.function`) coloured as `title`, `self`/`this`
-  (`variable.language`) as `variable`. Theme names become
-  `CodeHighlightTheme` values, and the default is now
-  `.githubLight`/`.githubDark` (was atom-one).
-- A fenced block's language is the info string's first word
-  (```` ```python title="x.py" ````), and a half-typed or mislabelled
-  block still highlights (highlight.js's `ignoreIllegals`).
 
 ### Fixed
 - Switching documents drops AppKit's blue autocorrection underline; it stood over the incoming document, and its range moved into the new text.
+- A configured bottom safe-area inset (`safeAreaInsets.bottom`) survives `recalcOverscroll`; it was reset to 0 on every pass, so the gap left for a control above the editor went missing.
 - Smart paste keeps tables, lists and headings that arrive wrapped in elements the converter doesn't know (Gemini's `<response-element>`/`<table-block>` web components, `<section>`, a Google Docs `<b>` wrapper); they used to collapse into one line of text.
 - Writing Tools on macOS 27: switching documents while a proofread's suggestions show, or pressing ⌘Z during a rewrite, no longer crashes when the session ends. AppKit's own end replayed the session's ranges over the next document or the undone text; the engine now ends the session at the switch and at the undo. Until then the next document also took no updates.
 - After a proofread the next keystroke reports its `onTextMutation` again.
